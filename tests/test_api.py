@@ -191,3 +191,38 @@ def test_chat_context_too_long_is_rejected(client):
         json={"message": "ทดสอบ", "diagnosis_context": "ก" * 5000},
     )
     assert res.status_code == 422
+
+
+def test_cli_diagnose_script_runs(tmp_path, leaf_with_spots):
+    """สคริปต์วิเคราะห์ภาพจากบรรทัดคำสั่งต้องทำงานได้และพิมพ์ผลออกมา"""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    image = tmp_path / "leaf.jpg"
+    image.write_bytes(leaf_with_spots)
+    out_json = tmp_path / "result.json"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(root / "scripts" / "diagnose_image.py"),
+            str(image),
+            "--context",
+            "ทดสอบระบบ",
+            "--json",
+            str(out_json),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=str(root),
+    )
+    assert result.returncode == 0, result.stderr
+    assert "สาเหตุที่เป็นไปได้" in result.stdout
+    assert out_json.is_file()
+    import json as json_module
+
+    saved = json_module.loads(out_json.read_text(encoding="utf-8"))
+    assert saved and saved[0]["result"]["candidates"]
