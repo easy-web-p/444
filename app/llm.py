@@ -300,6 +300,7 @@ def chat_stream(
     user_message: str,
     history: list[dict[str, str]],
     context: str,
+    diagnosis_context: str = "",
 ) -> Iterator[str]:
     """ตอบคำถามแบบ streaming คืนข้อความทีละชิ้น"""
     client = _client()
@@ -310,6 +311,15 @@ def chat_stream(
         if role in {"user", "assistant"} and content:
             messages.append({"role": role, "content": content})
     context_block = context.strip() or "ไม่พบข้อมูลที่ตรงกับคำถามนี้ในคลังความรู้"
+    diagnosis_block = ""
+    if diagnosis_context.strip():
+        diagnosis_block = (
+            "ผลวิเคราะห์ภาพล่าสุดของผู้ใช้ (ใช้เป็นบริบทในการตอบคำถามต่อเนื่อง "
+            "และอย่าลืมว่าเป็นผลคัดกรองที่ยังไม่ยืนยัน):\n"
+            "<ผลวินิจฉัยล่าสุด>\n"
+            f"{diagnosis_context.strip()}\n"
+            "</ผลวินิจฉัยล่าสุด>\n\n"
+        )
     messages.append(
         {
             "role": "user",
@@ -318,6 +328,7 @@ def chat_stream(
                 "<คลังความรู้>\n"
                 f"{context_block}\n"
                 "</คลังความรู้>\n\n"
+                f"{diagnosis_block}"
                 f"คำถามจากผู้ใช้: {user_message}"
             ),
         }

@@ -153,3 +153,41 @@ def test_diagnose_rejects_corrupt_image(client):
         files={"image": ("broken.jpg", b"\xff\xd8\xff\xe0 not really a jpeg", "image/jpeg")},
     )
     assert res.status_code == 400
+
+
+def test_chat_accepts_diagnosis_context(client):
+    """ถามต่อเนื่องเกี่ยวกับผลวินิจฉัยล่าสุดได้ โดยส่งบริบทมาพร้อมคำถาม"""
+    res = client.post(
+        "/api/chat",
+        json={
+            "message": "ถ้าไม่มีสารตัวนี้ ใช้อะไรแทนได้",
+            "diagnosis_context": (
+                "สาเหตุอันดับ 1: โรคราน้ำค้าง (รหัส downy_mildew) ความมั่นใจ 82%\n"
+                "สารที่ระบบแนะนำไว้แล้ว: เมทาแลกซิล-เอ็ม + แมนโคเซบ"
+            ),
+            "history": [],
+        },
+    )
+    assert res.status_code == 200
+    assert res.json()["answer"]
+
+
+def test_chat_context_improves_retrieval_for_short_followup(kb):
+    """คำถามสั้น ๆ ที่ไม่ได้ระบุชื่อโรค ต้องยังดึงข้อมูลโรคที่กำลังคุยกันอยู่มาได้"""
+    from app.chat import answer_stream
+
+    _, sources, _ = answer_stream(
+        "ต้องพ่นกี่ครั้ง",
+        [],
+        kb,
+        "สาเหตุอันดับ 1: โรคราน้ำค้าง (รหัส downy_mildew) ความมั่นใจ 82%",
+    )
+    assert any(source["id"] == "downy_mildew" for source in sources)
+
+
+def test_chat_context_too_long_is_rejected(client):
+    res = client.post(
+        "/api/chat",
+        json={"message": "ทดสอบ", "diagnosis_context": "ก" * 5000},
+    )
+    assert res.status_code == 422

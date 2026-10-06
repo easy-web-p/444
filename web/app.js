@@ -10,6 +10,9 @@ const state = {
   fertilizers: null,
   faq: null,
   chatHistory: [],
+  chatImage: null,
+  diagnosisContext: '',
+  lastDiagnosis: null,
   busy: false,
 };
 
@@ -334,6 +337,12 @@ function renderDiagnosis(d) {
     ${safety.banned_note ? `<p class="small muted">${esc(safety.banned_note)}</p>` : ''}
   </div>`);
 
+  const topName = (d.candidates || [])[0]?.name_th || 'ผลวิเคราะห์ล่าสุด';
+  parts.push(`<div class="card">
+    <button class="btn primary block" data-ask-in-chat>ถามต่อเกี่ยวกับผลนี้ในแชท</button>
+    <p class="small muted" style="margin-top:10px">เช่น ถามว่าถ้าไม่มีสารที่แนะนำจะใช้อะไรแทน ต้องพ่นกี่ครั้ง หรือพ่นร่วมกับปุ๋ยได้ไหม</p>
+  </div>`);
+
   parts.push(`<div class="card"><p class="small muted">${esc(d.disclaimer)}</p>
     ${d.meta?.image ? `<p class="small muted">ภาพต้นฉบับ ${esc(d.meta.image.original_size)} ส่งวิเคราะห์ที่ ${esc(d.meta.image.sent_size)}</p>` : ''}
     ${d.meta?.llm_error ? `<p class="small muted">หมายเหตุระบบ: ${esc(d.meta.llm_error)}</p>` : ''}
@@ -343,6 +352,12 @@ function renderDiagnosis(d) {
   host.innerHTML = parts.join('');
   host.querySelectorAll('[data-open-disease]').forEach((btn) => {
     btn.addEventListener('click', () => openDiseaseDetail(btn.dataset.openDisease, true));
+  });
+  host.querySelector('[data-ask-in-chat]')?.addEventListener('click', () => {
+    setDiagnosisContext(summarizeDiagnosis(d), d, topName);
+    $('.tab[data-tab="chat"]').click();
+    $('#chat-text').focus();
+    toast('พร้อมถามต่อเกี่ยวกับผลวิเคราะห์นี้แล้ว');
   });
   host.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -412,9 +427,17 @@ function initChat() {
     const chip = e.target.closest('.chip');
     if (chip) sendChat(chip.dataset.q);
   });
+
+  const imageInput = $('#chat-image-input');
+  $('#chat-attach').addEventListener('click', () => imageInput.click());
+  imageInput.addEventListener('change', () => {
+    if (imageInput.files && imageInput.files[0]) setChatImage(imageInput.files[0]);
+  });
+  $('#chat-attach-clear').addEventListener('click', clearChatImage);
+  $('#chat-context-clear').addEventListener('click', () => setDiagnosisContext('', null));
   addMessage('bot',
     'สวัสดีครับ ผมเป็นผู้ช่วยหมอพืชแตงโม ถามได้เลยเรื่องอาการที่พบในแปลง ยาและอัตราการใช้ โปรแกรมปุ๋ย ' +
-    'หรือการดูแลตามระยะการเจริญเติบโต\n\nถ้าต้องการให้วิเคราะห์จากภาพ ให้ไปที่แท็บ "วิเคราะห์จากภาพ"');
+    'หรือการดูแลตามระยะการเจริญเติบโต\n\n**แนบภาพอาการได้เลย** โดยกดปุ่มรูปภาพข้างช่องพิมพ์ ผมจะวิเคราะห์ให้แล้วถามต่อเกี่ยวกับผลนั้นได้ทันที');
 }
 
 function addMessage(role, text) {
@@ -427,15 +450,105 @@ function addMessage(role, text) {
   return el;
 }
 
+function setChatImage(file) {
+  if (!file.type.startsWith('image/')) { toast('กรุณาเลือกไฟล์ภาพ'); return; }
+  const limit = (state.health?.limits?.max_upload_mb || 12) * 1024 * 1024;
+  if (file.size > limit) { toast(`ไฟล์ใหญ่เกิน ${limit / 1024 / 1024} MB`); return; }
+  state.chatImage = file;
+  const url = URL.createObjectURL(file);
+  const thumb = $('#chat-attach-thumb');
+  thumb.src = url;
+  thumb.onload = () => URL.revokeObjectURL(url);
+  $('#chat-attach-name').textContent = file.name;
+  $('#chat-attach-preview').classList.remove('hidden');
+  $('#chat-attach').classList.add('has-file');
+  $('#chat-text').focus();
+}
+
+function clearChatImage() {
+  state.chatImage = null;
+  $('#chat-image-input').value = '';
+  $('#chat-attach-preview').classList.add('hidden');
+  $('#chat-attach').classList.remove('has-file');
+}
+
+/** เก็บสรุปผลวินิจฉัยไว้เป็นบริบทของบทสนทนา เพื่อให้ถามต่อเนื่องได้ */
+function setDiagnosisContext(summary, diagnosis, label) {
+  state.diagnosisContext = summary || '';
+  if (diagnosis) state.lastDiagnosis = diagnosis;
+  const banner = $('#chat-context');
+  if (summary) {
+    $('#chat-context-label').textContent = `กำลังคุยต่อเกี่ยวกับ: ${label || 'ผลวิเคราะห์ล่าสุด'}`;
+    banner.classList.remove('hidden');
+  } else {
+    banner.classList.add('hidden');
+  }
+}
+
+/** ย่อผลวินิจฉัยให้สั้นพอส่งเป็นบริบทให้โมเดลโดยไม่เปลืองโทเคน */
+function summarizeDiagnosis(d) {
+  const lines = [];
+  if (d.plant_part) lines.push(`ส่วนที่วิเคราะห์: ${d.plant_part}`);
+  if (d.severity?.level) {
+    lines.push(`ความรุนแรง: ${d.severity.level} (พื้นที่เสียหายประมาณ ${d.severity.affected_area_percent}%)`);
+  }
+  (d.candidates || []).slice(0, 3).forEach((c, i) => {
+    lines.push(`สาเหตุอันดับ ${i + 1}: ${c.name_th} (รหัส ${c.disease_id || 'ไม่ทราบ'}) ความมั่นใจ ${c.confidence}%`);
+    if (c.evidence?.length) lines.push(`  หลักฐาน: ${c.evidence.slice(0, 3).join(' / ')}`);
+  });
+  if (d.treatment?.chemical?.length) {
+    const names = d.treatment.chemical.slice(0, 4).map((x) => x.name_th).join(', ');
+    lines.push(`สารที่ระบบแนะนำไว้แล้ว: ${names}`);
+  }
+  if (d.observations?.length) lines.push(`สิ่งที่เห็นในภาพ: ${d.observations.slice(0, 2).join(' / ')}`);
+  return lines.join('\n');
+}
+
+/** การ์ดสรุปผลวินิจฉัยแบบย่อสำหรับแสดงในบับเบิลแชท */
+function renderChatDiagnosis(d) {
+  const parts = [];
+  if (d.summary_th) parts.push(`<div>${esc(d.summary_th)}</div>`);
+  (d.candidates || []).slice(0, 3).forEach((c) => {
+    const pct = Math.max(0, Math.min(100, c.confidence));
+    parts.push(`<div class="mini-candidate">
+      <span>${esc(c.name_th)}</span>
+      <span class="${barClass(pct)}"><span style="width:${pct}%"></span></span>
+      <span class="pct">${pct}%</span>
+    </div>`);
+  });
+  const top = (d.candidates || [])[0];
+  if (top?.evidence?.length) {
+    parts.push(`<div class="small" style="margin-top:6px"><strong>วิเคราะห์จาก:</strong></div>${list(top.evidence.slice(0, 3))}`);
+  }
+  if (d.treatment?.chemical?.length) {
+    parts.push('<div class="small" style="margin-top:6px"><strong>สารที่ใช้ได้ (อ่านฉลากก่อนใช้เสมอ):</strong></div>');
+    parts.push(list(d.treatment.chemical.slice(0, 3).map((x) =>
+      `${x.name_th} อัตรา ${x.rate}${x.phi_days != null ? ` · เก็บเกี่ยวได้หลังพ่น ${x.phi_days} วัน` : ''}`)));
+  }
+  if (d.safety?.guidance?.length) {
+    parts.push(`<div class="small muted" style="margin-top:6px">${esc(d.safety.guidance[0])}</div>`);
+  }
+  parts.push('<button class="btn ghost small" style="margin-top:8px" data-show-full-diagnosis>ดูแผนการจัดการแบบเต็ม</button>');
+  return parts.join('');
+}
+
 async function sendChat(message) {
-  if (!message || state.busy) return;
+  if (state.busy) return;
+  if (!message && !state.chatImage) return;
   state.busy = true;
   const box = $('#chat-text');
   box.value = '';
   box.style.height = 'auto';
   $('#chat-send').disabled = true;
-  addMessage('user', message);
 
+  if (state.chatImage) {
+    await sendChatImage(message);
+    state.busy = false;
+    $('#chat-send').disabled = false;
+    return;
+  }
+
+  addMessage('user', message);
   const bubble = addMessage('bot', '');
   bubble.classList.add('typing');
   let answer = '';
@@ -445,7 +558,11 @@ async function sendChat(message) {
     const res = await fetch('/api/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, history: state.chatHistory.slice(-10) }),
+      body: JSON.stringify({
+        message,
+        history: state.chatHistory.slice(-10),
+        diagnosis_context: state.diagnosisContext,
+      }),
     });
     if (!res.ok || !res.body) throw new Error(`เชื่อมต่อไม่สำเร็จ (${res.status})`);
 
@@ -491,6 +608,51 @@ async function sendChat(message) {
     state.busy = false;
     $('#chat-send').disabled = false;
     box.focus();
+  }
+}
+
+/** แนบภาพในแชท: วิเคราะห์ภาพแล้วแสดงการ์ดสรุป พร้อมจำบริบทไว้ถามต่อ */
+async function sendChatImage(message) {
+  const file = state.chatImage;
+  const url = URL.createObjectURL(file);
+  const userEl = addMessage('user', '');
+  userEl.innerHTML =
+    `<img class="msg-thumb" src="${url}" alt="ภาพอาการที่ส่ง" />` +
+    (message ? esc(message) : '<span class="small">ช่วยวิเคราะห์ภาพนี้ให้หน่อย</span>');
+
+  const bubble = addMessage('bot', 'กำลังวิเคราะห์ภาพ…');
+  bubble.classList.add('typing');
+  clearChatImage();
+
+  try {
+    const form = new FormData();
+    form.append('image', file);
+    form.append('context', message || '');
+    const res = await fetch('/api/diagnose', { method: 'POST', body: form });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'วิเคราะห์ภาพไม่สำเร็จ');
+
+    bubble.innerHTML = renderChatDiagnosis(data);
+    const top = (data.candidates || [])[0];
+    setDiagnosisContext(summarizeDiagnosis(data), data, top ? top.name_th : 'ผลวิเคราะห์ล่าสุด');
+    renderDiagnosis(data);           // เตรียมผลแบบเต็มไว้ในแท็บวิเคราะห์
+    bubble.querySelector('[data-show-full-diagnosis]')?.addEventListener('click', () => {
+      $('.tab[data-tab="diagnose"]').click();
+    });
+    bubble.querySelectorAll('[data-open-disease]').forEach((btn) =>
+      btn.addEventListener('click', () => openDiseaseDetail(btn.dataset.openDisease, true)));
+
+    state.chatHistory.push({ role: 'user', content: `ส่งภาพอาการมาให้วิเคราะห์ ${message || ''}`.trim() });
+    state.chatHistory.push({
+      role: 'assistant',
+      content: data.summary_th || 'วิเคราะห์ภาพเรียบร้อย',
+    });
+    addMessage('bot', 'ถามต่อเกี่ยวกับผลนี้ได้เลยครับ เช่น "ถ้าไม่มียาตัวนี้ใช้อะไรแทน" หรือ "ต้องพ่นกี่ครั้ง"');
+  } catch (err) {
+    bubble.innerHTML = renderText(`ขออภัย วิเคราะห์ภาพไม่สำเร็จ: ${err.message}`);
+  } finally {
+    bubble.classList.remove('typing');
+    $('#chat-log').scrollTop = $('#chat-log').scrollHeight;
   }
 }
 
@@ -546,7 +708,23 @@ async function openDiseaseDetail(id, switchTab = false) {
     const host = $('#disease-detail');
     host.innerHTML = `<div class="card"><h2>${esc(data.name_th)} ${data.name_en ? `<span class="muted small">${esc(data.name_en)}</span>` : ''}</h2>
         <p class="muted small">${esc(data.group_th)}${data.pathogen ? ' · ' + esc(data.pathogen) : ''}</p>
-        ${extra}</div>` + treatmentCard(data, 'การจัดการ');
+        ${extra}</div>`
+      + treatmentCard(data, 'การจัดการ')
+      + '<div class="card"><button class="btn primary block" data-ask-disease>ถามต่อเกี่ยวกับโรคนี้ในแชท</button></div>';
+    host.querySelector('[data-ask-disease]')?.addEventListener('click', () => {
+      const summary = [
+        `ผู้ใช้กำลังดูข้อมูลโรค: ${data.name_th} (รหัส ${data.disease_id})`,
+        data.pathogen ? `สาเหตุ: ${data.pathogen}` : '',
+        data.severity ? `ความรุนแรง: ${data.severity}` : '',
+        data.chemical?.length
+          ? `สารที่คลังความรู้แนะนำ: ${data.chemical.slice(0, 4).map((x) => x.name_th).join(', ')}`
+          : '',
+      ].filter(Boolean).join('\n');
+      setDiagnosisContext(summary, null, data.name_th);
+      $('.tab[data-tab="chat"]').click();
+      $('#chat-text').focus();
+      toast(`พร้อมถามต่อเกี่ยวกับ${data.name_th}แล้ว`);
+    });
     host.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (err) {
     toast(err.message || 'โหลดข้อมูลโรคไม่สำเร็จ');

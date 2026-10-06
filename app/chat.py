@@ -88,9 +88,16 @@ def _format_product(rec: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def offline_answer(message: str, kb: Knowledge) -> tuple[str, list[dict[str, Any]]]:
-    """ตอบคำถามโดยไม่ใช้โมเดล AI ด้วยการค้นคืนและจัดรูปข้อมูลจากคลังความรู้"""
-    hits = kb.index.search(message, limit=5)
+def offline_answer(
+    message: str, kb: Knowledge, diagnosis_context: str = ""
+) -> tuple[str, list[dict[str, Any]]]:
+    """ตอบคำถามโดยไม่ใช้โมเดล AI ด้วยการค้นคืนและจัดรูปข้อมูลจากคลังความรู้
+
+    ถ้ามีบริบทผลวินิจฉัยล่าสุด จะนำมารวมในคำค้นด้วย เพื่อให้คำถามต่อเนื่องสั้น ๆ
+    อย่าง "ต้องพ่นกี่ครั้ง" ยังดึงข้อมูลโรคที่กำลังคุยกันอยู่มาได้
+    """
+    query = f"{diagnosis_context[:400]} {message}" if diagnosis_context else message
+    hits = kb.index.search(query, limit=5)
     if not hits:
         return NO_RESULT, []
     # ตัดผลลัพธ์ที่คะแนนต่ำกว่า 35% ของอันดับหนึ่งออก เพื่อลดข้อมูลที่ไม่เกี่ยวข้อง
@@ -126,22 +133,31 @@ def offline_answer(message: str, kb: Knowledge) -> tuple[str, list[dict[str, Any
 
 
 def answer_stream(
-    message: str, history: list[dict[str, str]], kb: Knowledge
+    message: str,
+    history: list[dict[str, str]],
+    kb: Knowledge,
+    diagnosis_context: str = "",
 ) -> tuple[Iterator[str], list[dict[str, Any]], str]:
-    """คืน (ตัววนข้อความ, แหล่งอ้างอิง, ชื่อ engine)"""
-    context, sources = kb.context_for_chat(message, limit=6)
+    """คืน (ตัววนข้อความ, แหล่งอ้างอิง, ชื่อ engine)
+
+    diagnosis_context คือสรุปผลวินิจฉัยจากภาพล่าสุด ถ้ามีจะถูกส่งให้โมเดลด้วย
+    เพื่อให้ผู้ใช้ถามต่อเนื่องได้ เช่น "ถ้าไม่มียาตัวนี้ใช้อะไรแทน"
+    """
+    # ค้นคืนโดยรวมบริบทผลวินิจฉัยด้วย เพื่อให้ดึงข้อมูลโรคที่กำลังคุยกันอยู่มาได้แม้คำถามจะสั้น
+    search_query = f"{diagnosis_context[:400]} {message}" if diagnosis_context else message
+    context, sources = kb.context_for_chat(search_query, limit=6)
     if not SETTINGS.ai_enabled:
-        text, offline_sources = offline_answer(message, kb)
+        text, offline_sources = offline_answer(message, kb, diagnosis_context)
         return iter([text]), offline_sources, "offline_retrieval"
 
     def _gen() -> Iterator[str]:
         try:
-            yield from chat_stream(message, history, context)
+            yield from chat_stream(message, history, context, diagnosis_context)
         except LLMUnavailable as exc:
-            text, _ = offline_answer(message, kb)
+            text, _ = offline_answer(message, kb, diagnosis_context)
             yield f"[ไม่สามารถเรียกโมเดล AI ได้: {exc}]\n\n{text}"
         except Exception as exc:  # noqa: BLE001
-            text, _ = offline_answer(message, kb)
+            text, _ = offline_answer(message, kb, diagnosis_context)
             yield f"[เกิดข้อผิดพลาดในการเรียกโมเดล AI: {exc}]\n\n{text}"
 
     return _gen(), sources, "claude_chat"

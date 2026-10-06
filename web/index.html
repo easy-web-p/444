@@ -93,8 +93,25 @@
         <button type="button" class="chip" data-q="แตงโมไม่หวาน แก้ไขอย่างไร">แตงโมไม่หวาน</button>
         <button type="button" class="chip" data-q="ยาที่ใช้กับโรคราน้ำค้างมีอะไรบ้าง และสลับกลุ่มอย่างไร">ยาราน้ำค้าง + สลับกลุ่ม</button>
       </div>
+      <div class="chat-context hidden" id="chat-context">
+        <span id="chat-context-label"></span>
+        <button type="button" class="btn ghost small" id="chat-context-clear">ล้างบริบท</button>
+      </div>
+      <div class="attach-preview hidden" id="chat-attach-preview">
+        <img id="chat-attach-thumb" alt="ภาพที่แนบ" />
+        <span class="small muted" id="chat-attach-name"></span>
+        <button type="button" class="btn ghost small" id="chat-attach-clear">เอาภาพออก</button>
+      </div>
       <form class="chat-input" id="chat-form">
-        <textarea id="chat-text" rows="1" placeholder="พิมพ์คำถามเรื่องโรคแตงโม ยา ปุ๋ย หรือการดูแล…" maxlength="4000"></textarea>
+        <input type="file" id="chat-image-input" accept="image/*" capture="environment" hidden />
+        <button type="button" class="btn icon" id="chat-attach" title="แนบภาพอาการเพื่อให้ AI วิเคราะห์" aria-label="แนบภาพอาการ">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10"/>
+            <circle cx="8.5" cy="8.5" r="1.6"/><path d="m3 16 5-4 4 3 3-2 3 2.5"/>
+            <path d="M19 17v5m2.5-2.5h-5"/>
+          </svg>
+        </button>
+        <textarea id="chat-text" rows="1" placeholder="พิมพ์คำถาม หรือแนบภาพอาการ…" maxlength="4000"></textarea>
         <button class="btn primary" type="submit" id="chat-send">ส่ง</button>
       </form>
     </div>

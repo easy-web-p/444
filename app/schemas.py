@@ -15,6 +15,11 @@ class ChatTurn(BaseModel):
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     history: list[ChatTurn] = Field(default_factory=list, max_length=20)
+    diagnosis_context: str = Field(
+        default="",
+        max_length=4000,
+        description="สรุปผลวินิจฉัยล่าสุด เพื่อให้ถามต่อเนื่องเกี่ยวกับผลนั้นได้",
+    )
 
 
 class ChatResponse(BaseModel):

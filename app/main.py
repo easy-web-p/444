@@ -123,7 +123,9 @@ def api_chat(payload: ChatRequest) -> ChatResponse:
         return ChatResponse(
             answer=answer, sources=sources, engine="offline_retrieval", ai_enabled=False
         )
-    stream, sources, engine = answer_stream(payload.message, history, KB)
+    stream, sources, engine = answer_stream(
+        payload.message, history, KB, payload.diagnosis_context
+    )
     answer = "".join(stream)
     return ChatResponse(answer=answer, sources=sources, engine=engine, ai_enabled=True)
 
@@ -132,7 +134,9 @@ def api_chat(payload: ChatRequest) -> ChatResponse:
 def api_chat_stream(payload: ChatRequest) -> StreamingResponse:
     """ถามตอบแบบสตรีมผ่าน Server-Sent Events"""
     history = [turn.model_dump() for turn in payload.history]
-    stream, sources, engine = answer_stream(payload.message, history, KB)
+    stream, sources, engine = answer_stream(
+        payload.message, history, KB, payload.diagnosis_context
+    )
 
     def event_source():
         yield _sse({"type": "meta", "engine": engine, "sources": sources})
