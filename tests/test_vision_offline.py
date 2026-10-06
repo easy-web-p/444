@@ -53,3 +53,29 @@ def test_offline_result_has_required_shape(leaf_with_spots):
         assert key in result
     assert result["_meta"]["engine"] == "offline_heuristic"
     assert "ออฟไลน์" in result["summary_th"]
+
+
+def test_soil_background_is_not_counted_as_lesions(leaf_on_soil_background):
+    """ดินและเงาในพื้นหลังต้องไม่ถูกนับเป็นจุดแผล
+
+    ก่อนแก้ ภาพถ่ายจากแปลงจริงถูกนับจุดแผลจากเงาระหว่างก้อนดินนับร้อยจุด
+    ทำให้ภาพราแป้งถูกจัดเป็นโรคใบจุดผิด
+    """
+    features = extract_features(leaf_on_soil_background)
+    assert features["plant_coverage"] < 60, "พื้นหลังดินต้องไม่ถูกนับเป็นพื้นที่พืช"
+    assert features["pct_lesion"] < 8, "พื้นที่แผลต้องคิดเฉพาะในบริเวณใบเท่านั้น"
+
+
+def test_white_patches_outrank_leaf_spot_on_field_like_image(leaf_on_soil_background):
+    """ภาพใบมีคราบขาวบนพื้นหลังดิน ต้องได้ราแป้งเป็นอันดับหนึ่ง"""
+    result = analyze_offline(leaf_on_soil_background)
+    assert result["candidates"], "ต้องเสนอสาเหตุอย่างน้อยหนึ่งรายการ"
+    assert result["candidates"][0]["disease_id"] == "powdery_mildew"
+
+
+def test_percentages_are_relative_to_plant_area(leaf_with_spots):
+    """เปอร์เซ็นต์ต้องคิดเทียบกับพื้นที่พืช ไม่ใช่ทั้งภาพ"""
+    features = extract_features(leaf_with_spots)
+    assert "plant_coverage" in features
+    assert 0 <= features["pct_green"] <= 100
+    assert features["pct_green"] > 70, "ภาพใบเต็มกรอบ พื้นที่เขียวเทียบกับพื้นที่ใบต้องสูง"
