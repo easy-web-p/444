@@ -1,0 +1,3 @@
+-r requirements.txt
+pytest==8.4.2
+httpx                 # จำเป็นสำหรับ fastapi TestClient

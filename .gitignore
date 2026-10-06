@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# ความลับ / การตั้งค่าเครื่อง
+.env
+.env.local
+
+# ข้อมูลภาพและโมเดลขนาดใหญ่ (ดาวน์โหลด/เทรนเองด้วย scripts/)
+datasets/
+models/*.onnx
+models/*.pt
+models/*.pth
+models/*.tflite
+models/*.keras
+runs/
+uploads/
+
+# ระบบปฏิบัติการ / เครื่องมือ
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# ไฟล์สำรองที่สร้างด้วย git bundle
+*.bundle

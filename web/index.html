@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>ระบบ AI วินิจฉัยโรคแตงโม</title>
+<meta name="description" content="วิเคราะห์โรคแตงโมจากภาพด้วย AI พร้อมคลังข้อมูลยา ปุ๋ย และวิธีดูแลภาษาไทย" />
+<meta name="theme-color" content="#0f7b4f" />
+<link rel="stylesheet" href="/static/styles.css" />
+<link rel="icon" href="/static/assets/favicon.svg" type="image/svg+xml" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 32 32" width="30" height="30" role="img" aria-label="ไอคอนแตงโม">
+        <circle cx="16" cy="16" r="14" fill="#1b7f4a"/>
+        <path d="M2.6 16a13.4 13.4 0 0 0 26.8 0z" fill="#e3464f"/>
+        <path d="M2.6 16a13.4 13.4 0 0 0 1 5h24.8a13.4 13.4 0 0 0 1-5z" fill="#f7f3e8" opacity=".55"/>
+        <path d="M8 6.5 10.5 11M16 3.6V9M24 6.5 21.5 11" stroke="#0e5c35" stroke-width="1.6" fill="none"/>
+      </svg>
+    </span>
+    <div class="brand-text">
+      <h1>ระบบ AI วินิจฉัยโรคแตงโม</h1>
+      <p>วิเคราะห์จากภาพ บอกสาเหตุ ความมั่นใจ วิธีดูแล ยา และปุ๋ย</p>
+    </div>
+  </div>
+  <div class="status" id="status-badge" aria-live="polite">กำลังตรวจสอบระบบ…</div>
+</header>
+
+<nav class="tabs" role="tablist" aria-label="เมนูหลัก">
+  <button class="tab active" role="tab" aria-selected="true" data-tab="diagnose">วิเคราะห์จากภาพ</button>
+  <button class="tab" role="tab" aria-selected="false" data-tab="chat">แชทถามตอบ</button>
+  <button class="tab" role="tab" aria-selected="false" data-tab="diseases">คลังโรค</button>
+  <button class="tab" role="tab" aria-selected="false" data-tab="pesticides">คลังยา</button>
+  <button class="tab" role="tab" aria-selected="false" data-tab="fertilizers">ปุ๋ยและธาตุอาหาร</button>
+  <button class="tab" role="tab" aria-selected="false" data-tab="faq">คำถามที่พบบ่อย</button>
+</nav>
+
+<main>
+  <!-- ====================== วิเคราะห์จากภาพ ====================== -->
+  <section class="panel active" id="panel-diagnose" role="tabpanel">
+    <div class="card uploader">
+      <h2>1. เลือกภาพอาการที่พบ</h2>
+      <label class="dropzone" id="dropzone" tabindex="0">
+        <input type="file" id="file-input" accept="image/*" capture="environment" hidden />
+        <svg viewBox="0 0 24 24" width="38" height="38" aria-hidden="true"><path d="M12 16V4m0 0 4 4m-4-4-4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <strong>แตะเพื่อถ่ายภาพหรือเลือกไฟล์</strong>
+        <span>รองรับ JPG, PNG, WebP ขนาดไม่เกิน <b id="max-mb">12</b> MB — ลากไฟล์มาวางได้</span>
+      </label>
+      <div class="preview hidden" id="preview-wrap">
+        <img id="preview-img" alt="ภาพที่เลือก" />
+        <button class="btn ghost small" id="clear-image" type="button">เลือกภาพใหม่</button>
+      </div>
+
+      <h2>2. ข้อมูลประกอบ (ไม่บังคับ แต่ช่วยให้แม่นขึ้นมาก)</h2>
+      <textarea id="context-input" rows="3" maxlength="2000"
+        placeholder="เช่น แตงโมอายุ 45 วัน ระยะผลขยาย ฝนตกติดกัน 3 วัน ใบล่างเป็นก่อนแล้วลามขึ้น พ่นแมนโคเซบครั้งสุดท้าย 5 วันที่แล้ว"></textarea>
+      <div class="chips" id="context-chips">
+        <button type="button" class="chip" data-add="ระยะกล้า">ระยะกล้า</button>
+        <button type="button" class="chip" data-add="ระยะเถาเลื้อย">ระยะเถาเลื้อย</button>
+        <button type="button" class="chip" data-add="ระยะออกดอก">ระยะออกดอก</button>
+        <button type="button" class="chip" data-add="ระยะผลขยาย">ระยะผลขยาย</button>
+        <button type="button" class="chip" data-add="ระยะผลแก่ใกล้เก็บเกี่ยว">ใกล้เก็บเกี่ยว</button>
+        <button type="button" class="chip" data-add="ฝนตกชุก ดินแฉะ">ฝนตกชุก</button>
+        <button type="button" class="chip" data-add="อากาศร้อนแล้ง">ร้อนแล้ง</button>
+        <button type="button" class="chip" data-add="อากาศเย็น น้ำค้างแรง">น้ำค้างแรง</button>
+      </div>
+
+      <button class="btn primary block" id="analyze-btn" type="button" disabled>วิเคราะห์ภาพด้วย AI</button>
+      <details class="tips">
+        <summary>วิธีถ่ายภาพให้ AI วิเคราะห์ได้แม่นที่สุด</summary>
+        <ol>
+          <li>ถ่ายในแสงธรรมชาติ เลี่ยงแดดจัดจนเกิดเงาแข็ง และไม่ใช้แฟลช</li>
+          <li>ถ่ายใกล้แผล 15-30 ซม. ให้โฟกัสคมที่แผล</li>
+          <li>ถ่ายอีกภาพในระยะไกลให้เห็นทั้งต้นหรือทั้งแปลง เพราะรูปแบบการกระจายช่วยแยกโรคจากพิษสารและการขาดธาตุ</li>
+          <li>ถ่ายทั้งด้านบนใบและใต้ใบ เพราะอาการของราน้ำค้าง ไรแดง และแมลงหวี่ขาวอยู่ใต้ใบ</li>
+          <li>วางเหรียญหรือนิ้วข้างแผลเพื่อเทียบขนาด</li>
+        </ol>
+      </details>
+    </div>
+    <div id="diagnose-result" class="result-area"></div>
+  </section>
+
+  <!-- ====================== แชท ====================== -->
+  <section class="panel" id="panel-chat" role="tabpanel">
+    <div class="card chat-card">
+      <div class="chat-log" id="chat-log" aria-live="polite"></div>
+      <div class="chat-suggest" id="chat-suggest">
+        <button type="button" class="chip" data-q="ใบมีปื้นเหลืองและมีขุยสีเทาใต้ใบ เป็นโรคอะไร ใช้ยาอะไร">ใบเหลือง มีขุยใต้ใบ</button>
+        <button type="button" class="chip" data-q="ต้นเหี่ยวแต่ดินยังชื้น ควรตรวจอะไรก่อน">ต้นเหี่ยวแต่ดินชื้น</button>
+        <button type="button" class="chip" data-q="โปรแกรมปุ๋ยแตงโมช่วงผลขยายควรใช้สูตรอะไร อัตราเท่าไร">โปรแกรมปุ๋ยช่วงผลขยาย</button>
+        <button type="button" class="chip" data-q="แตงโมไม่หวาน แก้ไขอย่างไร">แตงโมไม่หวาน</button>
+        <button type="button" class="chip" data-q="ยาที่ใช้กับโรคราน้ำค้างมีอะไรบ้าง และสลับกลุ่มอย่างไร">ยาราน้ำค้าง + สลับกลุ่ม</button>
+      </div>
+      <form class="chat-input" id="chat-form">
+        <textarea id="chat-text" rows="1" placeholder="พิมพ์คำถามเรื่องโรคแตงโม ยา ปุ๋ย หรือการดูแล…" maxlength="4000"></textarea>
+        <button class="btn primary" type="submit" id="chat-send">ส่ง</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ====================== คลังโรค ====================== -->
+  <section class="panel" id="panel-diseases" role="tabpanel">
+    <div class="card">
+      <div class="filter-row">
+        <input type="search" id="disease-search" placeholder="ค้นหาโรคหรืออาการ เช่น ยางไหล ใบจุด รากปม" />
+        <select id="disease-group"><option value="">ทุกกลุ่ม</option></select>
+      </div>
+      <p class="muted" id="disease-count"></p>
+      <div class="grid" id="disease-list"></div>
+    </div>
+    <div id="disease-detail" class="result-area"></div>
+  </section>
+
+  <!-- ====================== คลังยา ====================== -->
+  <section class="panel" id="panel-pesticides" role="tabpanel">
+    <div class="card">
+      <div class="notice warn">
+        อัตราที่แสดงเป็นแนวทาง ต้องอ่านฉลากผลิตภัณฑ์ที่ซื้อมาและใช้อัตราตามฉลาก เพราะความเข้มข้นของแต่ละยี่ห้อต่างกัน
+        และต้องตรวจสอบสถานะการขึ้นทะเบียนกับกรมวิชาการเกษตรก่อนใช้
+      </div>
+      <div class="filter-row">
+        <input type="search" id="pesticide-search" placeholder="ค้นหาสาร เช่น แมนโคเซบ อะซอกซี ไตรโคเดอร์มา" />
+        <select id="pesticide-type">
+          <option value="">ทุกชนิด</option>
+          <option value="fungicide">สารป้องกันกำจัดโรคพืช (เชื้อรา)</option>
+          <option value="bactericide">สารกำจัดแบคทีเรีย</option>
+          <option value="insecticide">สารกำจัดแมลง</option>
+          <option value="miticide">สารกำจัดไร</option>
+          <option value="nematicide">สารกำจัดไส้เดือนฝอย</option>
+          <option value="biological">ชีวภัณฑ์</option>
+          <option value="adjuvant">สารเสริมและกับดัก</option>
+        </select>
+        <label class="check"><input type="checkbox" id="pesticide-organic" /> ใช้ได้ในระบบอินทรีย์</label>
+      </div>
+      <p class="muted" id="pesticide-count"></p>
+      <div class="grid" id="pesticide-list"></div>
+    </div>
+    <div id="pesticide-detail" class="result-area"></div>
+  </section>
+
+  <!-- ====================== ปุ๋ย ====================== -->
+  <section class="panel" id="panel-fertilizers" role="tabpanel">
+    <div id="fertilizer-content" class="result-area"></div>
+  </section>
+
+  <!-- ====================== FAQ ====================== -->
+  <section class="panel" id="panel-faq" role="tabpanel">
+    <div class="card">
+      <input type="search" id="faq-search" placeholder="ค้นหาคำถาม" />
+      <div id="faq-list" class="faq-list"></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <p class="disclaimer" id="footer-disclaimer">
+    ระบบนี้เป็นเครื่องมือช่วยคัดกรองเบื้องต้น ไม่ใช่การวินิจฉัยที่ยืนยันแล้ว
+    ก่อนใช้สารเคมีทุกครั้งต้องอ่านฉลาก ใช้อัตราตามฉลาก สวมอุปกรณ์ป้องกัน และเคารพระยะเก็บเกี่ยวปลอดภัย (PHI)
+  </p>
+  <p class="muted small" id="footer-stats"></p>
+</footer>
+
+<div class="toast hidden" id="toast" role="status" aria-live="assertive"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

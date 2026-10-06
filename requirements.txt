@@ -1,0 +1,12 @@
+# ระบบ AI วินิจฉัยโรคแตงโม — Python dependencies
+fastapi==0.118.0
+uvicorn[standard]==0.37.0
+pydantic==2.11.9
+python-multipart==0.0.20
+pillow==11.3.0
+numpy==2.3.3
+anthropic>=0.69,<2
+httpx
+
+# --- ไม่บังคับ (optional) ---
+# onnxruntime==1.23.0     # ใช้เมื่อมีโมเดล .onnx ที่เทรนเองใน models/
