@@ -20,7 +20,7 @@ from PIL import Image, UnidentifiedImageError
 from . import local_model
 from .config import SETTINGS
 from .knowledge import Knowledge
-from .llm import LLMUnavailable, analyze_image
+from .llm import LLMUnavailable, analyze_image, api_error_message
 from .vision_offline import analyze_offline
 
 logger = logging.getLogger(__name__)
@@ -228,8 +228,13 @@ def diagnose(
             result = analyze_offline(raw_resized)
             engines_used.append("offline_heuristic")
         except Exception as exc:  # noqa: BLE001
-            llm_error = f"เกิดข้อผิดพลาดในการเรียกโมเดล AI: {exc}"
-            logger.exception("เรียกโมเดล AI ไม่สำเร็จ")
+            hint = api_error_message(exc)
+            if hint:
+                llm_error = hint
+                logger.warning("เรียกโมเดล AI ไม่สำเร็จ จึงใช้โหมดออฟไลน์: %s", hint)
+            else:
+                llm_error = f"เกิดข้อผิดพลาดในการเรียกโมเดล AI: {exc}"
+                logger.exception("เรียกโมเดล AI ไม่สำเร็จ")
             result = analyze_offline(raw_resized)
             engines_used.append("offline_heuristic")
     else:

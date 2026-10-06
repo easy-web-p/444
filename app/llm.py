@@ -180,6 +180,40 @@ def _client():
     return anthropic.Anthropic(api_key=SETTINGS.api_key, max_retries=2, timeout=180.0)
 
 
+_API_ERROR_HINTS: tuple[tuple[int, str], ...] = (
+    (401, "API key ไม่ถูกต้องหรือหมดอายุ ตรวจสอบค่า ANTHROPIC_API_KEY ในไฟล์ .env"),
+    (403, "API key นี้ไม่มีสิทธิ์เรียกโมเดลที่ตั้งค่าไว้ ตรวจสอบสิทธิ์ของคีย์และชื่อโมเดลใน MELON_MODEL"),
+    (404, "ไม่พบโมเดลที่ตั้งค่าไว้ ตรวจสอบค่า MELON_MODEL ว่าสะกดถูกและบัญชีเข้าถึงโมเดลนี้ได้"),
+    (429, "เรียก API ถี่เกินขีดจำกัด หรือเครดิตในบัญชีหมด รอสักครู่แล้วลองใหม่"),
+    (529, "ระบบของผู้ให้บริการกำลังมีผู้ใช้หนาแน่น รอสักครู่แล้วลองใหม่"),
+)
+
+
+def api_error_message(exc: Exception) -> str | None:
+    """แปลงข้อผิดพลาดจาก API ที่พบบ่อยให้เป็นข้อความที่บอกวิธีแก้ได้
+
+    คืน None ถ้าไม่ใช่ข้อผิดพลาดที่รู้จัก เพื่อให้ผู้เรียกจัดการเองตามเดิม
+    """
+    status = getattr(exc, "status_code", None)
+    for code, hint in _API_ERROR_HINTS:
+        if status == code:
+            return hint
+    name = type(exc).__name__
+    if name in ("APIConnectionError", "APITimeoutError", "APIConnectionTimeoutError"):
+        return "เชื่อมต่อ api.anthropic.com ไม่ได้ ตรวจสอบอินเทอร์เน็ตหรือการตั้งค่าพร็อกซี"
+    if status is not None and status >= 500:
+        return "ผู้ให้บริการตอบกลับด้วยข้อผิดพลาดของเซิร์ฟเวอร์ รอสักครู่แล้วลองใหม่"
+    return None
+
+
+def _as_unavailable(exc: Exception) -> Exception:
+    """ยกระดับข้อผิดพลาดที่รู้จักให้เป็น LLMUnavailable เพื่อไม่ให้หลุดเป็น traceback"""
+    hint = api_error_message(exc)
+    if hint is None:
+        return exc
+    return LLMUnavailable(hint)
+
+
 def _fallback_kwargs() -> dict[str, Any]:
     """เปิด server-side fallback เมื่อคำขอถูกปฏิเสธโดยตัวกรองความปลอดภัย"""
     if not SETTINGS.enable_fallback:
@@ -254,7 +288,10 @@ def analyze_image(
         ],
     }
 
-    message = _create_with_fallback(client, request)
+    try:
+        message = _create_with_fallback(client, request)
+    except Exception as exc:  # noqa: BLE001 - ครอบคลุมทุกข้อผิดพลาดจาก API
+        raise _as_unavailable(exc) from exc
 
     if getattr(message, "stop_reason", "") == "refusal":
         raise LLMUnavailable(_refusal_message(message))
@@ -363,6 +400,9 @@ def chat_stream(
             return
         except Exception as exc:  # noqa: BLE001
             if not _is_bad_request(exc):
-                raise
+                raise _as_unavailable(exc) from exc
             logger.warning("server-side fallback ไม่พร้อมใช้งานในโหมดแชท: %s", exc)
-    yield from _run({})
+    try:
+        yield from _run({})
+    except Exception as exc:  # noqa: BLE001 - ครอบคลุมทุกข้อผิดพลาดจาก API
+        raise _as_unavailable(exc) from exc

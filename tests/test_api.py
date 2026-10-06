@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 
 import pytest
@@ -226,3 +227,49 @@ def test_cli_diagnose_script_runs(tmp_path, leaf_with_spots):
 
     saved = json_module.loads(out_json.read_text(encoding="utf-8"))
     assert saved and saved[0]["result"]["candidates"]
+
+
+def test_api_error_messages_are_actionable():
+    """ข้อผิดพลาดจาก API ที่พบบ่อยต้องกลายเป็นข้อความที่บอกวิธีแก้ ไม่ใช่ traceback"""
+    from app.llm import LLMUnavailable, _as_unavailable, api_error_message
+
+    class FakeApiError(Exception):
+        def __init__(self, status_code):
+            super().__init__("boom")
+            self.status_code = status_code
+
+    assert "ANTHROPIC_API_KEY" in api_error_message(FakeApiError(401))
+    assert "MELON_MODEL" in api_error_message(FakeApiError(404))
+    assert api_error_message(FakeApiError(429))
+    assert api_error_message(FakeApiError(503))
+    # ข้อผิดพลาดที่ไม่รู้จักต้องไม่ถูกกลืน เพื่อให้เห็นของจริงตอนดีบั๊ก
+    assert api_error_message(ValueError("อะไรที่ไม่คาดคิด")) is None
+    assert isinstance(_as_unavailable(FakeApiError(401)), LLMUnavailable)
+    unknown = ValueError("อะไรที่ไม่คาดคิด")
+    assert _as_unavailable(unknown) is unknown
+
+
+def test_invalid_api_key_falls_back_without_crashing(monkeypatch, kb, leaf_with_spots):
+    """ถ้า API key ผิด ต้องถอยไปโหมดออฟไลน์พร้อมบอกเหตุผล ไม่ใช่ล่ม"""
+    from app import diagnose as diagnose_module
+
+    class FakeAuthError(Exception):
+        status_code = 401
+
+    def boom(**kwargs):
+        raise FakeAuthError("API key is invalid.")
+
+    # Settings เป็น frozen dataclass จึงสร้างสำเนาที่มี api_key แทนการแก้ค่าเดิม
+    monkeypatch.setattr(
+        diagnose_module,
+        "SETTINGS",
+        dataclasses.replace(diagnose_module.SETTINGS, api_key="sk-ant-ไม่ถูกต้อง"),
+    )
+    monkeypatch.setattr(diagnose_module, "analyze_image", boom)
+
+    result = diagnose_module.diagnose(leaf_with_spots, kb, "image/jpeg", "")
+
+    assert result["ok"] is True
+    assert result["engine"] == "offline_heuristic"
+    assert "ANTHROPIC_API_KEY" in result["meta"]["llm_error"]
+    assert result["candidates"]

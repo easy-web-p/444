@@ -46,6 +46,9 @@ def print_report(path: Path, result: dict[str, Any], show_full: bool) -> None:
         else "โหมดออฟไลน์ (วิเคราะห์สีและลักษณะแผล ความแม่นยำจำกัด)"
     )
     print(f"วิเคราะห์ด้วย: {engine}")
+    llm_error = result["meta"].get("llm_error")
+    if llm_error:
+        print(f"เหตุที่ไม่ได้ใช้โมเดล AI: {llm_error}")
     if result.get("plant_part"):
         print(f"ส่วนที่วิเคราะห์: {result['plant_part']}")
     print(LINE)

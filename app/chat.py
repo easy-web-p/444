@@ -6,11 +6,17 @@ from typing import Any, Iterator
 
 from .config import SETTINGS
 from .knowledge import Knowledge
-from .llm import LLMUnavailable, chat_stream
+from .llm import LLMUnavailable, api_error_message, chat_stream
 
 OFFLINE_HEADER = (
     "ขณะนี้ระบบทำงานในโหมดออฟไลน์ (ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY) "
     "จึงตอบด้วยการค้นคืนข้อมูลจากคลังความรู้โดยตรง ไม่ได้เรียบเรียงใหม่ด้วย AI\n"
+)
+
+# ใช้เมื่อมีการตั้งค่า API key แล้วแต่เรียกไม่สำเร็จ เพื่อไม่ให้บอกสาเหตุผิด
+FALLBACK_HEADER = (
+    "เรียกโมเดล AI ไม่สำเร็จ จึงตอบด้วยการค้นคืนข้อมูลจากคลังความรู้โดยตรง "
+    "ไม่ได้เรียบเรียงใหม่ด้วย AI\n"
 )
 
 NO_RESULT = (
@@ -89,7 +95,7 @@ def _format_product(rec: dict[str, Any]) -> str:
 
 
 def offline_answer(
-    message: str, kb: Knowledge, diagnosis_context: str = ""
+    message: str, kb: Knowledge, diagnosis_context: str = "", header: str | None = None
 ) -> tuple[str, list[dict[str, Any]]]:
     """ตอบคำถามโดยไม่ใช้โมเดล AI ด้วยการค้นคืนและจัดรูปข้อมูลจากคลังความรู้
 
@@ -104,7 +110,7 @@ def offline_answer(
     cutoff = hits[0][1] * 0.35
     hits = [hit for hit in hits if hit[1] >= cutoff][:3]
 
-    parts: list[str] = [OFFLINE_HEADER]
+    parts: list[str] = [header or OFFLINE_HEADER]
     sources: list[dict[str, Any]] = []
     for doc, score in hits:
         sources.append({"kind": doc.kind, "id": doc.doc_id, "title": doc.title, "score": round(score, 2)})
@@ -151,13 +157,24 @@ def answer_stream(
         return iter([text]), offline_sources, "offline_retrieval"
 
     def _gen() -> Iterator[str]:
+        sent_any = False
         try:
-            yield from chat_stream(message, history, context, diagnosis_context)
-        except LLMUnavailable as exc:
-            text, _ = offline_answer(message, kb, diagnosis_context)
-            yield f"[ไม่สามารถเรียกโมเดล AI ได้: {exc}]\n\n{text}"
-        except Exception as exc:  # noqa: BLE001
-            text, _ = offline_answer(message, kb, diagnosis_context)
-            yield f"[เกิดข้อผิดพลาดในการเรียกโมเดล AI: {exc}]\n\n{text}"
+            for chunk in chat_stream(message, history, context, diagnosis_context):
+                sent_any = True
+                yield chunk
+        except Exception as exc:  # noqa: BLE001 - ครอบคลุมทุกข้อผิดพลาดจาก API
+            reason = (
+                str(exc)
+                if isinstance(exc, LLMUnavailable)
+                else api_error_message(exc) or f"เกิดข้อผิดพลาดในการเรียกโมเดล AI: {exc}"
+            )
+            if sent_any:
+                # ตอบไปแล้วบางส่วน จึงบอกแค่ว่าคำตอบไม่จบ ไม่ต่อท้ายคำตอบออฟไลน์ซ้อนเข้าไป
+                yield f"\n\n[คำตอบถูกตัดกลางทาง: {reason}]"
+            else:
+                text, _ = offline_answer(
+                    message, kb, diagnosis_context, header=FALLBACK_HEADER
+                )
+                yield f"[ไม่สามารถเรียกโมเดล AI ได้: {reason}]\n\n{text}"
 
     return _gen(), sources, "claude_chat"
